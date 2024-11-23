@@ -257,56 +257,114 @@ function parseStyle(text, format) {
   }) ));
 }
 
+function createNewSection(section, type) {
+  return {
+    section: section,
+    type: type,
+    body: [],
+  };
+}
+
 function parse(text) {
   var tree = {
     info: {},
     styles: { format: [], style: [] },
     events: { format: [], comment: [], dialogue: [] },
+    sections: [],
   };
   var lines = text.split(/\r?\n/);
-  var state = 0;
+  var state = -1;
+  tree.sections.push(createNewSection(undefined, 'unknown'));
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i].trim();
-    if (/^;/.test(line)) { continue; }
 
-    if (/^\[Script Info\]/i.test(line)) { state = 1; }
-    else if (/^\[V4\+? Styles\]/i.test(line)) { state = 2; }
-    else if (/^\[Events\]/i.test(line)) { state = 3; }
-    else if (/^\[.*\]/.test(line)) { state = 0; }
+    if (/^\s*\[Script Info\]/i.test(line)) {
+      state = 1;
+      tree.sections.push(Object.assign({}, createNewSection('Script Info', 'info'), { info: tree.info }));
+    } else if (/^\s*\[V4\+? Styles\]/i.test(line)) {
+      state = 2;
+      tree.sections.push(createNewSection('V4+ Styles', 'styles'));
+    } else if (/^\s*\[Events\]/i.test(line)) {
+      state = 3;
+      tree.sections.push(createNewSection('Events', 'events'));
+    } else {
+      var match = /^\s*\[(.*)\]/.exec(line);
+      if (match) {
+        state = 0;
+        tree.sections.push(Object.assign({}, createNewSection(match[1], 'info'), { info: {} }));
+      }
+    }
 
-    if (state === 0) { continue; }
-    if (state === 1) {
+    var currentSection = tree.sections[tree.sections.length - 1];
+
+    if (/^;/.test(line)) {
+      currentSection.body.push({
+        type: 'comment',
+        line: line.slice(1),
+      });
+    }
+
+    if (state === 0 || state === 1) {
       if (/:/.test(line)) {
         var ref = line.match(/(.*?)\s*:\s*(.*)/);
         var key = ref[1];
         var value = ref[2];
-        tree.info[key] = value;
+        currentSection.info[key] = value;
+        currentSection.body.push({
+          type: 'entry',
+          key: key,
+        });
       }
     }
     if (state === 2) {
       if (/^Format\s*:/i.test(line)) {
-        tree.styles.format = parseFormat(line);
+        var format = parseFormat(line);
+        tree.styles.format = format;
+        currentSection.format = format;
+        currentSection.body.push({
+          type: 'format',
+          format: format,
+        });
       }
       if (/^Style\s*:/i.test(line)) {
-        tree.styles.style.push(parseStyle(line, tree.styles.format));
+        var style = parseStyle(line, tree.styles.format);
+        tree.styles.style.push(style);
+        currentSection.body.push({
+          type: 'entry',
+          value: style,
+        });
       }
     }
     if (state === 3) {
       if (/^Format\s*:/i.test(line)) {
-        tree.events.format = parseFormat(line);
+        var format$1 = parseFormat(line);
+        tree.events.format = format$1;
+        currentSection.format = format$1;
+        currentSection.body.push({
+          type: 'format',
+          format: format$1,
+        });
       }
       if (/^(?:Comment|Dialogue)\s*:/i.test(line)) {
         var ref$1 = line.match(/^(\w+?)\s*:\s*(.*)/i);
         var key$1 = ref$1[1];
         var value$1 = ref$1[2];
-        tree.events[key$1.toLowerCase()].push(parseDialogue(value$1, tree.events.format));
+        var dialogue = parseDialogue(value$1, tree.events.format);
+        tree.events[key$1.toLowerCase()].push(dialogue);
+        currentSection.body.push({
+          type: 'entry',
+          key: key$1.toLowerCase().replace(/^\w/, function (c) { return c.toUpperCase(); }),
+          value: dialogue,
+        });
       }
     }
   }
 
+  tree.sections = tree.sections.filter(function (sec) { return sec.section != null || sec.body.length !== 0; });
   return tree;
 }
 
+/* eslint-disable no-nested-ternary */
 function stringifyInfo(info) {
   return Object.keys(info).map(function (key) { return (key + ": " + (info[key])); }).join('\n');
 }
@@ -383,7 +441,7 @@ function stringifyEvent(event, format) {
       case 'MarginL':
       case 'MarginR':
       case 'MarginV':
-        return event[fmt] || '0000';
+        return event[fmt] || '0';
       case 'Effect':
         return stringifyEffect(event[fmt]);
       case 'Text':
@@ -395,31 +453,23 @@ function stringifyEvent(event, format) {
 }
 
 function stringify(ref) {
-  var ref$1;
+  var sections = ref.sections;
 
-  var info = ref.info;
-  var styles = ref.styles;
-  var events = ref.events;
-  return [
-    '[Script Info]',
-    stringifyInfo(info),
-    '',
-    '[V4+ Styles]',
-    ("Format: " + (styles.format.join(', '))) ].concat( styles.style.map(function (style) { return ("Style: " + (styles.format.map(function (fmt) { return style[fmt]; }).join())); }),
-    [''],
-    ['[Events]'],
-    [("Format: " + (events.format.join(', ')))],
-    (ref$1 = [])
-      .concat.apply(ref$1, ['Comment', 'Dialogue'].map(function (type) { return (
-        events[type.toLowerCase()].map(function (dia) { return ({
-          start: dia.Start,
-          end: dia.End,
-          string: (type + ": " + (stringifyEvent(dia, events.format))),
-        }); })
-      ); }))
-      .sort(function (a, b) { return (a.start - b.start) || (a.end - b.end); })
-      .map(function (x) { return x.string; }),
-    [''] ).join('\n');
+  return sections.map(function (section) { return ( section.section != null ? [("[" + (section.section) + "]")] : [] ).concat( section.body.map(function (entry) { return [
+      entry.type === 'comment'
+        ? (";" + (entry.line))
+        : entry.type === 'format'
+          ? ("Format: " + (entry.format.join(', ')))
+          : entry.type === 'entry'
+            ? section.type === 'info'
+              ? ((entry.key) + ": " + (section.info[entry.key]))
+              : section.type === 'styles'
+                ? ("Style: " + (section.format.map(function (fmt) { return entry.value[fmt]; }).join()))
+                : section.type === 'events'
+                  ? ((entry.key) + ": " + (stringifyEvent(entry.value, section.format)))
+                  : undefined
+            : undefined ]; }),
+    [''] ).join('\n'); }).join('\n');
 }
 
 function createCommand(arr) {

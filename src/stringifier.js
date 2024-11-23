@@ -1,3 +1,4 @@
+/* eslint-disable no-nested-ternary */
 export function stringifyInfo(info) {
   return Object.keys(info).map((key) => `${key}: ${info[key]}`).join('\n');
 }
@@ -71,7 +72,7 @@ export function stringifyEvent(event, format) {
       case 'MarginL':
       case 'MarginR':
       case 'MarginV':
-        return event[fmt] || '0000';
+        return event[fmt] || '0';
       case 'Effect':
         return stringifyEffect(event[fmt]);
       case 'Text':
@@ -82,27 +83,24 @@ export function stringifyEvent(event, format) {
   }).join();
 }
 
-export function stringify({ info, styles, events }) {
-  return [
-    '[Script Info]',
-    stringifyInfo(info),
+export function stringify({ sections }) {
+  return sections.map((section) => [
+    ...section.section != null ? [`[${section.section}]`] : [],
+    ...section.body.map((entry) => [
+      entry.type === 'comment'
+        ? `;${entry.line}`
+        : entry.type === 'format'
+          ? `Format: ${entry.format.join(', ')}`
+          : entry.type === 'entry'
+            ? section.type === 'info'
+              ? `${entry.key}: ${section.info[entry.key]}`
+              : section.type === 'styles'
+                ? `Style: ${section.format.map((fmt) => entry.value[fmt]).join()}`
+                : section.type === 'events'
+                  ? `${entry.key}: ${stringifyEvent(entry.value, section.format)}`
+                  : undefined
+            : undefined,
+    ]),
     '',
-    '[V4+ Styles]',
-    `Format: ${styles.format.join(', ')}`,
-    ...styles.style.map((style) => `Style: ${styles.format.map((fmt) => style[fmt]).join()}`),
-    '',
-    '[Events]',
-    `Format: ${events.format.join(', ')}`,
-    ...[]
-      .concat(...['Comment', 'Dialogue'].map((type) => (
-        events[type.toLowerCase()].map((dia) => ({
-          start: dia.Start,
-          end: dia.End,
-          string: `${type}: ${stringifyEvent(dia, events.format)}`,
-        }))
-      )))
-      .sort((a, b) => (a.start - b.start) || (a.end - b.end))
-      .map((x) => x.string),
-    '',
-  ].join('\n');
+  ].join('\n')).join('\n');
 }

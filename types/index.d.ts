@@ -11,33 +11,35 @@ interface ScriptInfo {
     [name: string]: string;
 }
 
+interface ParsedASSStyle {
+    Name: string;
+    Fontname: string;
+    Fontsize: string;
+    PrimaryColour: string;
+    SecondaryColour: string;
+    OutlineColour: string;
+    BackColour: string;
+    Bold: string;
+    Italic: string;
+    Underline: string;
+    StrikeOut: string;
+    ScaleX: string;
+    ScaleY: string;
+    Spacing: string;
+    Angle: string;
+    BorderStyle: string;
+    Outline: string;
+    Shadow: string;
+    Alignment: string;
+    MarginL: string;
+    MarginR: string;
+    MarginV: string;
+    Encoding: string;
+}
+
 interface ParsedASSStyles {
     format: string[];
-    style: {
-        Name: string;
-        Fontname: string;
-        Fontsize: string;
-        PrimaryColour: string;
-        SecondaryColour: string;
-        OutlineColour: string;
-        BackColour: string;
-        Bold: string;
-        Italic: string;
-        Underline: string;
-        StrikeOut: string;
-        ScaleX: string;
-        ScaleY: string;
-        Spacing: string;
-        Angle: string;
-        BorderStyle: string;
-        Outline: string;
-        Shadow: string;
-        Alignment: string;
-        MarginL: string;
-        MarginR: string;
-        MarginV: string;
-        Encoding: string;
-    }[];
+    style: ParsedASSStyle[];
 }
 
 interface ParsedASSEventTextParsed {
@@ -90,10 +92,57 @@ interface ParsedASSEvents {
     dialogue: ParsedASSEvent[];
 }
 
+interface CommentLine {
+    type: "comment";
+    line: string;
+}
+
+interface FormatLine {
+    type: "format";
+    format: string[];
+}
+
+interface KeyLine {
+    info: "entry",
+    key: "string",
+}
+
+interface StyleLine {
+    type: "entry";
+    value: ParsedASSStyle;
+}
+
+interface EventLine {
+    type: "entry";
+    key: string;
+    value: ParsedASSEvent;
+}
+
+type Section = {
+    type: "styles";
+    section: string,
+    format: string[],
+    body: (CommentLine | FormatLine | StyleLine)[];
+} | {
+    type: "events";
+    section: string,
+    format: string[],
+    body: (CommentLine | FormatLine | EventLine)[];
+} | {
+    type: "info";
+    section: string,
+    info: Record<string, string>;
+    body: (CommentLine | KeyLine)[];
+} | {
+    type: "unknown";
+    body: CommentLine[];
+};
+
 export interface ParsedASS {
     info: ScriptInfo;
     styles: ParsedASSStyles;
     events: ParsedASSEvents;
+    sections: Section[];
 }
 
 /**
